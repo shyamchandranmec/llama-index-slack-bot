@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import asyncio
 from dotenv import load_dotenv
@@ -6,6 +7,7 @@ from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
 from llama_index.core.memory import Memory
+from llama_index.core.base.llms.types import ChatMessage
 
 from main import agent
 
@@ -14,20 +16,71 @@ log = logging.getLogger(__name__)
 
 load_dotenv()
 
+PERSIST_MODE = os.getenv("PERSIST_MODE", "").upper()  # LOCAL, REDIS, or ""
+MEMORY_DIR = os.getenv("MEMORY_DIR", ".agent_memory")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+
 app = AsyncApp(token=os.environ["SLACK_BOT_TOKEN"])
 
 thread_memories: dict[str, Memory] = {}
 
+# ── Redis setup ────────────────────────────────────────────────────────────────
+_redis_kvstore = None
+if PERSIST_MODE == "REDIS":
+    from llama_index.storage.kvstore.redis import RedisKVStore
+    _redis_kvstore = RedisKVStore(redis_url=REDIS_URL)
+    log.info("Memory persistence: REDIS (%s)", REDIS_URL)
+elif PERSIST_MODE == "LOCAL":
+    log.info("Memory persistence: LOCAL (%s)", MEMORY_DIR)
+else:
+    log.info("Memory persistence: IN-MEMORY only")
 
-def get_or_create_memory(session_id: str) -> Memory:
+# ── LOCAL helpers ──────────────────────────────────────────────────────────────
+def _local_path(session_id: str) -> str:
+    os.makedirs(MEMORY_DIR, exist_ok=True)
+    return os.path.join(MEMORY_DIR, f"{session_id}.json")
+
+
+async def _load_local(session_id: str) -> Memory:
+    path = _local_path(session_id)
+    if os.path.exists(path):
+        try:
+            with open(path) as f:
+                messages = [ChatMessage.model_validate(m) for m in json.load(f)]
+            log.info("Loaded %d messages for session %s", len(messages), session_id)
+            return Memory.from_defaults(session_id=session_id, chat_history=messages)
+        except Exception as e:
+            log.warning("Could not load memory for %s (%s), starting fresh", session_id, e)
+    return Memory.from_defaults(session_id=session_id)
+
+
+async def _save_local(session_id: str, memory: Memory) -> None:
+    messages = await memory.aget_all()
+    data = [m.model_dump(mode="json") for m in messages]
+    with open(_local_path(session_id), "w") as f:
+        json.dump(data, f)
+    log.info("Saved %d messages for session %s", len(data), session_id)
+
+
+# ── Unified memory factory ─────────────────────────────────────────────────────
+async def get_or_create_memory(session_id: str) -> Memory:
     if session_id not in thread_memories:
-        thread_memories[session_id] = Memory.from_defaults(session_id=session_id)
+        if PERSIST_MODE == "LOCAL":
+            thread_memories[session_id] = await _load_local(session_id)
+        elif PERSIST_MODE == "REDIS":
+            thread_memories[session_id] = Memory.from_defaults(
+                session_id=session_id, memory_store=_redis_kvstore
+            )
+        else:
+            thread_memories[session_id] = Memory.from_defaults(session_id=session_id)
     return thread_memories[session_id]
 
 
 async def ask_agent(text: str, session_id: str) -> str:
-    memory = get_or_create_memory(session_id)
+    memory = await get_or_create_memory(session_id)
     response = await agent.run(user_msg=text, memory=memory)
+    if PERSIST_MODE == "LOCAL":
+        await _save_local(session_id, memory)
     return str(response)
 
 

@@ -692,6 +692,8 @@ dependencies = [
     { name = "dotenv" },
     { name = "llama-index" },
     { name = "llama-index-llms-anthropic" },
+    { name = "llama-index-storage-kvstore-redis" },
+    { name = "redis" },
     { name = "slack-bolt" },
     { name = "slack-sdk" },
 ]
@@ -701,6 +703,8 @@ requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "llama-index", specifier = ">=0.14.18" },
     { name = "llama-index-llms-anthropic", specifier = ">=0.6.0" },
+    { name = "llama-index-storage-kvstore-redis", specifier = ">=0.1.0" },
+    { name = "redis", specifier = ">=5.0.0" },
     { name = "slack-bolt", specifier = ">=1.21.0" },
     { name = "slack-sdk", specifier = ">=3.35.0" },
 ]
@@ -834,6 +838,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e0/9e/ae83aac91f48cf79141d8751ed0f02aa4dbc62ecf397a4095455ca26f660/llama_index_readers_llama_parse-0.6.0.tar.gz", hash = "sha256:6e086b7034a001bb0204e3431cb1cee5b6ec13f930acbf9a6e82c64aed72b09e", size = 3858, upload-time = "2026-03-12T20:35:56.291Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/72/52/1d8e1aa23ef32d0df3a7fd533ae0c1bbcd15ae24d9c43d5c66096ef47e0e/llama_index_readers_llama_parse-0.6.0-py3-none-any.whl", hash = "sha256:d06a3376bcb278a610a4dad4bdc70a5f19278370d7df756d8b5c171c3c13ff1f", size = 3200, upload-time = "2026-03-12T20:35:55.611Z" },
+]
+
+[[package]]
+name = "llama-index-storage-kvstore-redis"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "llama-index-core" },
+    { name = "redis" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/df/2d/59131f80e70e9531f2fdc9bae775230d65dcaf1e8ced9e3eb7b86d51d26c/llama_index_storage_kvstore_redis-0.5.0.tar.gz", hash = "sha256:48c0b075f4516db54cac3a31c697e375e1ff573dd4d71c472bbef19e1b44d830", size = 4386, upload-time = "2026-03-12T20:42:27.136Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/9e/70b37f5bd550cacfbffe05725f689611284c77149b95a44467ace2a6ae9c/llama_index_storage_kvstore_redis-0.5.0-py3-none-any.whl", hash = "sha256:d63677c7bfe880c76a3672581c834fb4749799b1a44a28ffab17abd361a34d0d", size = 4040, upload-time = "2026-03-12T20:42:27.72Z" },
 ]
 
 [[package]]
@@ -1216,6 +1233,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyjwt"
+version = "2.12.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c2/27/a3b6e5bf6ff856d2509292e95c8f57f0df7017cf5394921fc4e4ef40308a/pyjwt-2.12.1.tar.gz", hash = "sha256:c74a7a2adf861c04d002db713dd85f84beb242228e671280bf709d765b03672b", size = 102564, upload-time = "2026-03-13T19:27:37.25Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/7a/8dd906bd22e79e47397a61742927f6747fe93242ef86645ee9092e610244/pyjwt-2.12.1-py3-none-any.whl", hash = "sha256:28ca37c070cad8ba8cd9790cd940535d40274d22f80ab87f3ac6a713e6e8454c", size = 29726, upload-time = "2026-03-13T19:27:35.677Z" },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -1260,6 +1286,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/da/92/1446574745d74df0c92e6aa4a7b0b3130706a4142b2d1a5869f2eaa423c6/pyyaml-6.0.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:16249ee61e95f858e83976573de0f5b2893b3677ba71c9dd36b9cf8be9ac6d65", size = 829923, upload-time = "2025-09-25T21:32:54.537Z" },
     { url = "https://files.pythonhosted.org/packages/f0/7a/1c7270340330e575b92f397352af856a8c06f230aa3e76f86b39d01b416a/pyyaml-6.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4ad1906908f2f5ae4e5a8ddfce73c320c2a1429ec52eafd27138b7f1cbe341c9", size = 174062, upload-time = "2025-09-25T21:32:55.767Z" },
     { url = "https://files.pythonhosted.org/packages/f1/12/de94a39c2ef588c7e6455cfbe7343d3b2dc9d6b6b2f40c4c6565744c873d/pyyaml-6.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:ebc55a14a21cb14062aa4162f906cd962b28e2e9ea38f9b4391244cd8de4ae0b", size = 149341, upload-time = "2025-09-25T21:32:56.828Z" },
+]
+
+[[package]]
+name = "redis"
+version = "5.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyjwt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6a/cf/128b1b6d7086200c9f387bd4be9b2572a30b90745ef078bd8b235042dc9f/redis-5.3.1.tar.gz", hash = "sha256:ca49577a531ea64039b5a36db3d6cd1a0c7a60c34124d46924a45b956e8cf14c", size = 4626200, upload-time = "2025-07-25T08:06:27.778Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/26/5c5fa0e83c3621db835cfc1f1d789b37e7fa99ed54423b5f519beb931aa7/redis-5.3.1-py3-none-any.whl", hash = "sha256:dc1909bd24669cc31b5f67a039700b16ec30571096c5f1f0d9d2324bff31af97", size = 272833, upload-time = "2025-07-25T08:06:26.317Z" },
 ]
 
 [[package]]
