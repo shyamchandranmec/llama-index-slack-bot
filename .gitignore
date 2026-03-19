@@ -14,3 +14,4 @@ wheels/
 
 # Local memory persistence
 .agent_memory/
+.claude/
