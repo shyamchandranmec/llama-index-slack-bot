@@ -1,0 +1,13 @@
+[project]
+name = "llama-index-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "dotenv>=0.9.9",
+    "llama-index>=0.14.18",
+    "llama-index-llms-anthropic>=0.6.0",
+    "slack-sdk>=3.35.0",
+    "slack-bolt>=1.21.0",
+]
