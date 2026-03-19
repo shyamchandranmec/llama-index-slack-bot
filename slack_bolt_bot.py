@@ -25,10 +25,10 @@ app = AsyncApp(token=os.environ["SLACK_BOT_TOKEN"])
 thread_memories: dict[str, Memory] = {}
 
 # ── Redis setup ────────────────────────────────────────────────────────────────
-_redis_kvstore = None
+_redis_client = None
 if PERSIST_MODE == "REDIS":
-    from llama_index.storage.kvstore.redis import RedisKVStore
-    _redis_kvstore = RedisKVStore(redis_url=REDIS_URL)
+    import redis.asyncio as aioredis
+    _redis_client = aioredis.from_url(REDIS_URL)
     log.info("Memory persistence: REDIS (%s)", REDIS_URL)
 elif PERSIST_MODE == "LOCAL":
     log.info("Memory persistence: LOCAL (%s)", MEMORY_DIR)
@@ -62,15 +62,33 @@ async def _save_local(session_id: str, memory: Memory) -> None:
     log.info("Saved %d messages for session %s", len(data), session_id)
 
 
+# ── REDIS helpers ──────────────────────────────────────────────────────────────
+async def _load_redis(session_id: str) -> Memory:
+    try:
+        raw = await _redis_client.get(f"memory:{session_id}")
+        if raw:
+            messages = [ChatMessage.model_validate(m) for m in json.loads(raw)]
+            log.info("Loaded %d messages for session %s from Redis", len(messages), session_id)
+            return Memory.from_defaults(session_id=session_id, chat_history=messages)
+    except Exception as e:
+        log.warning("Could not load memory for %s from Redis (%s), starting fresh", session_id, e)
+    return Memory.from_defaults(session_id=session_id)
+
+
+async def _save_redis(session_id: str, memory: Memory) -> None:
+    messages = await memory.aget_all()
+    data = json.dumps([m.model_dump(mode="json") for m in messages])
+    await _redis_client.set(f"memory:{session_id}", data)
+    log.info("Saved %d messages for session %s to Redis", len(messages), session_id)
+
+
 # ── Unified memory factory ─────────────────────────────────────────────────────
 async def get_or_create_memory(session_id: str) -> Memory:
     if session_id not in thread_memories:
         if PERSIST_MODE == "LOCAL":
             thread_memories[session_id] = await _load_local(session_id)
         elif PERSIST_MODE == "REDIS":
-            thread_memories[session_id] = Memory.from_defaults(
-                session_id=session_id, memory_store=_redis_kvstore
-            )
+            thread_memories[session_id] = await _load_redis(session_id)
         else:
             thread_memories[session_id] = Memory.from_defaults(session_id=session_id)
     return thread_memories[session_id]
@@ -81,6 +99,8 @@ async def ask_agent(text: str, session_id: str) -> str:
     response = await agent.run(user_msg=text, memory=memory)
     if PERSIST_MODE == "LOCAL":
         await _save_local(session_id, memory)
+    elif PERSIST_MODE == "REDIS":
+        await _save_redis(session_id, memory)
     return str(response)
 
 
