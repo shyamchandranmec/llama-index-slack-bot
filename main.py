@@ -1,6 +1,6 @@
 import asyncio
 
-from llama_index.core.agent import ReActAgent
+from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
 from llama_index.llms.anthropic import Anthropic
 from dotenv import load_dotenv
@@ -23,7 +23,7 @@ tools = [
     FunctionTool.from_defaults(fn=multiply),
     FunctionTool.from_defaults(fn=add),
 ]
-agent = ReActAgent(tools=tools, llm=llm, verbose=True)
+agent = FunctionAgent(tools=tools, llm=llm, verbose=True)
 
 
 if __name__ == "__main__":

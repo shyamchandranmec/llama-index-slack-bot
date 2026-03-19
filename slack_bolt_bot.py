@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
+from llama_index.core.memory import Memory
+
 from main import agent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -14,18 +16,28 @@ load_dotenv()
 
 app = AsyncApp(token=os.environ["SLACK_BOT_TOKEN"])
 
+thread_memories: dict[str, Memory] = {}
 
-async def ask_agent(text: str) -> str:
-    response = await agent.run(user_msg=text)
+
+def get_or_create_memory(session_id: str) -> Memory:
+    if session_id not in thread_memories:
+        thread_memories[session_id] = Memory.from_defaults(session_id=session_id)
+    return thread_memories[session_id]
+
+
+async def ask_agent(text: str, session_id: str) -> str:
+    memory = get_or_create_memory(session_id)
+    response = await agent.run(user_msg=text, memory=memory)
     return str(response)
 
 
 async def reply(say, event):
     """Send agent response, replying in-thread when applicable."""
     thread_ts = event.get("thread_ts") or event.get("ts")
+    session_id = event.get("thread_ts") or event.get("channel")
     text = event.get("text", "")
-    log.info("Querying agent with: %r", text)
-    answer = await ask_agent(text)
+    log.info("Querying agent with: %r (session=%s)", text, session_id)
+    answer = await ask_agent(text, session_id)
     await say(text=answer, thread_ts=thread_ts)
 
 
