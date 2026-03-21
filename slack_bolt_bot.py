@@ -1,8 +1,11 @@
 import os
+import re
 import json
 import logging
 import asyncio
+from pathlib import Path
 from dotenv import load_dotenv
+import aiohttp
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
@@ -19,6 +22,7 @@ load_dotenv()
 PERSIST_MODE = os.getenv("PERSIST_MODE", "").upper()  # LOCAL, REDIS, or ""
 MEMORY_DIR = os.getenv("MEMORY_DIR", ".agent_memory")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+UPLOADS_DIR = Path(os.getenv("UPLOADS_DIR", ".uploads"))
 
 app = AsyncApp(token=os.environ["SLACK_BOT_TOKEN"])
 
@@ -94,24 +98,126 @@ async def get_or_create_memory(session_id: str) -> Memory:
     return thread_memories[session_id]
 
 
-async def ask_agent(text: str, session_id: str) -> str:
-    memory = await get_or_create_memory(session_id)
-    response = await agent.run(user_msg=text, memory=memory)
+async def _persist_memory(session_id: str, memory: Memory) -> None:
     if PERSIST_MODE == "LOCAL":
         await _save_local(session_id, memory)
     elif PERSIST_MODE == "REDIS":
         await _save_redis(session_id, memory)
+
+
+async def ask_agent(text: str, session_id: str) -> str:
+    memory = await get_or_create_memory(session_id)
+    response = await agent.run(user_msg=text, memory=memory)
+    await _persist_memory(session_id, memory)
     return str(response)
+
+
+# ── File upload helpers ────────────────────────────────────────────────────────
+def _unique_path(folder: Path, name: str) -> Path:
+    """Return a non-colliding path, appending _1, _2, ... before extension if needed."""
+    dest = folder / name
+    if not dest.exists():
+        return dest
+    stem, suffix = Path(name).stem, Path(name).suffix
+    i = 1
+    while True:
+        dest = folder / f"{stem}_{i}{suffix}"
+        if not dest.exists():
+            return dest
+        i += 1
+
+
+def _register_file(session_id: str, file_info: dict, saved_path: Path) -> None:
+    """Append file metadata to the session's files.json registry."""
+    registry = UPLOADS_DIR / session_id / "files.json"
+    entries = json.loads(registry.read_text()) if registry.exists() else []
+    entries.append({
+        "original_name": file_info.get("name"),
+        "saved_path": str(saved_path),
+        "mimetype": file_info.get("mimetype"),
+        "ts": file_info.get("timestamp") or file_info.get("created"),
+    })
+    registry.write_text(json.dumps(entries, indent=2))
+
+
+async def download_slack_file(file_info: dict, session_id: str) -> Path:
+    """Download a Slack file, save under .uploads/{session_id}/, deduplicate if needed,
+    and register in files.json."""
+    url = file_info.get("url_private_download") or file_info.get("url_private")
+    name = file_info.get("name", "file")
+    folder = UPLOADS_DIR / session_id
+    folder.mkdir(parents=True, exist_ok=True)
+    dest = _unique_path(folder, name)
+    headers = {"Authorization": f"Bearer {os.environ['SLACK_BOT_TOKEN']}"}
+    async with aiohttp.ClientSession() as http:
+        async with http.get(url, headers=headers) as resp:
+            dest.write_bytes(await resp.read())
+    _register_file(session_id, file_info, dest)
+    log.info("Saved file %s (session=%s)", dest, session_id)
+    return dest
+
+
+async def process_and_reply(channel: str, thread_ts: str, session_id: str, file_infos: list[dict], text: str) -> None:
+    """Background task: download all files, proc e ss them together, then post one result to the thread."""
+    log.info("Starting file processing for session %s: %d file(s)", session_id, len(file_infos))    
+    file_paths = await asyncio.gather(*[download_slack_file(fi, session_id) for fi in file_infos])
+
+    memory = await get_or_create_memory(session_id)
+    for fi, fp in zip(file_infos, file_paths):
+        log.info("Adding file to memory for session %s: %s at %s", session_id, fi.get("name", "unknown"), fp)       
+        await memory.aput(ChatMessage(
+            role="system",
+            content=f"[File uploaded] name={fi.get('name', 'unknown')}, path={fp}",
+        ))
+    await _persist_memory(session_id, memory)
+
+    file_parts = ", ".join(
+        f"'{fi.get('name', 'unknown')}' at '{fp}'"
+        for fi, fp in zip(file_infos, file_paths)
+    )
+    log.info("All files for session %s saved: %s", session_id, file_parts)
+    prompt = f"The user uploaded the following file(s): {file_parts}. {text}"
+    log.info("Processing %d file(s) for session %s, question: %s", len(file_infos), session_id, text)
+
+    result = str(await ask_agent(prompt, session_id))
+    log.info("Agent response for session %s: %s", session_id, result)
+    await app.client.chat_postMessage(channel=channel, thread_ts=thread_ts, text=result)
 
 
 async def reply(say, event):
     """Send agent response, replying in-thread when applicable."""
-    thread_ts = event.get("thread_ts") or event.get("ts")
     session_id = event.get("thread_ts") or event.get("channel")
-    text = event.get("text", "")
-    log.info("Querying agent with: %r (session=%s)", text, session_id)
-    answer = await ask_agent(text, session_id)
-    await say(text=answer, thread_ts=thread_ts)
+    channel = event.get("channel")
+    thread_ts = event.get("thread_ts") or event.get("ts")
+    raw_text = event.get("text") or ""
+    # Strip bot mention tokens so we can detect if a real question was asked
+    text = re.sub(r"<@[A-Z0-9]+>", "", raw_text).strip()
+    files = event.get("files", [])
+
+    if files:
+        if not text:
+            # File with no question — prompt the user
+            await say(
+                text="I received your file! What would you like to know about it?",
+                thread_ts=thread_ts,
+            )
+            return
+
+        # File(s) + question — ack immediately, process all together in background
+        await say(
+            text="Got it! I'll take a look at your file(s) and get back to you shortly.",
+            thread_ts=thread_ts,
+        )
+        asyncio.create_task(process_and_reply(channel, thread_ts, session_id, files, text))
+    else:
+        # Text only — process directly
+        if text:
+            log.info("Querying agent with: %r (session=%s)", text, session_id)
+            answer = await ask_agent(text, session_id)
+            await say(text=answer, thread_ts=thread_ts)
+        else:
+            log.info("No text to process for session %s", session_id)
+            await say(text="I received your message but couldn't find any text to process. Please ask a question or upload a file!", thread_ts=thread_ts)
 
 
 # Direct messages

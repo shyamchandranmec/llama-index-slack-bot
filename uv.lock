@@ -689,6 +689,7 @@ name = "llama-index-agent"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aiohttp" },
     { name = "dotenv" },
     { name = "llama-index" },
     { name = "llama-index-llms-anthropic" },
@@ -700,6 +701,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "llama-index", specifier = ">=0.14.18" },
     { name = "llama-index-llms-anthropic", specifier = ">=0.6.0" },
